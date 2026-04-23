@@ -7,16 +7,20 @@ use App\Mail\CustomerOrderStatusNotification;
 use App\Mail\NewOrderAdminNotification;
 use App\Models\Order;
 use App\Models\Product;
+use App\Support\BrevoTransactionalMailer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class OrderController extends Controller
 {
+    public function __construct(
+        protected BrevoTransactionalMailer $transactionalMailer
+    ) {}
+
     protected function sendCustomerOrderNotification(Order $order, string $notificationType): ?string
     {
         if (empty($order->customer_email)) {
@@ -24,7 +28,8 @@ class OrderController extends Controller
         }
 
         try {
-            Mail::to($order->customer_email)->queue(
+            $this->transactionalMailer->send(
+                $order->customer_email,
                 new CustomerOrderStatusNotification($order, $notificationType)
             );
 
@@ -39,6 +44,48 @@ class OrderController extends Controller
 
             return 'La commande a ete mise a jour, mais l email client n a pas pu etre envoye.';
         }
+    }
+
+    protected function queueCustomerOrderNotificationAfterResponse(Order $order, string $notificationType): void
+    {
+        $orderId = $order->id;
+
+        app()->terminating(function () use ($orderId, $notificationType) {
+            $freshOrder = Order::find($orderId);
+
+            if ($freshOrder) {
+                $this->sendCustomerOrderNotification($freshOrder, $notificationType);
+            }
+        });
+    }
+
+    protected function queueAdminOrderNotificationAfterResponse(Order $order): void
+    {
+        $adminEmail = config('mail.admin_order_notification_email');
+
+        if (empty($adminEmail)) {
+            return;
+        }
+
+        $orderId = $order->id;
+
+        app()->terminating(function () use ($orderId, $adminEmail) {
+            $freshOrder = Order::find($orderId);
+
+            if (!$freshOrder) {
+                return;
+            }
+
+            try {
+                $this->transactionalMailer->send($adminEmail, new NewOrderAdminNotification($freshOrder));
+            } catch (Throwable $exception) {
+                Log::warning('Order admin notification failed', [
+                    'order_id' => $freshOrder->id,
+                    'admin_email' => $adminEmail,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        });
     }
 
     public function index(Request $request)
@@ -209,28 +256,11 @@ class OrderController extends Controller
             'status' => 'pending',
         ]);
 
-        $adminEmail = config('mail.admin_order_notification_email');
-        $mailWarning = null;
-        $customerMailWarning = $this->sendCustomerOrderNotification($order, 'created');
-
-        if (!empty($adminEmail)) {
-            try {
-                Mail::to($adminEmail)->queue(new NewOrderAdminNotification($order));
-            } catch (Throwable $exception) {
-                $mailWarning = 'La commande a ete enregistree mais la notification email a echoue.';
-
-                Log::warning('Order admin notification failed', [
-                    'order_id' => $order->id,
-                    'admin_email' => $adminEmail,
-                    'error' => $exception->getMessage(),
-                ]);
-            }
-        }
+        $this->queueCustomerOrderNotificationAfterResponse($order, 'created');
+        $this->queueAdminOrderNotificationAfterResponse($order);
 
         return response()->json([
             'message' => 'Commande enregistree avec succes',
-            'mail_warning' => $mailWarning,
-            'customer_mail_warning' => $customerMailWarning,
             'order' => $order,
         ], 201);
     }
@@ -311,7 +341,6 @@ class OrderController extends Controller
             'shipping' => 'shipping',
             'delivered' => 'delivered',
         ];
-        $customerMailWarning = null;
 
         if (!empty($result['missing_products'])) {
             $message .= ' (certains produits lies a la commande ont deja ete supprimes)';
@@ -320,7 +349,7 @@ class OrderController extends Controller
         $nextStatus = $result['order']->status;
 
         if (($result['status_changed'] ?? false) && isset($statusNotificationTypes[$nextStatus])) {
-            $customerMailWarning = $this->sendCustomerOrderNotification(
+            $this->queueCustomerOrderNotificationAfterResponse(
                 $result['order'],
                 $statusNotificationTypes[$nextStatus]
             );
@@ -328,7 +357,6 @@ class OrderController extends Controller
 
         return response()->json([
             'message' => $message,
-            'customer_mail_warning' => $customerMailWarning,
             'order' => $result['order'],
             'missing_products' => $result['missing_products'],
         ]);
