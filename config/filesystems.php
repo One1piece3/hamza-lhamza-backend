@@ -1,8 +1,8 @@
 <?php
 
-$publicDiskRoot = env('FILESYSTEM_PUBLIC_DIRECT', false)
+$publicDiskRoot = env('FILESYSTEM_PUBLIC_ROOT') ?: (env('FILESYSTEM_PUBLIC_DIRECT', false)
     ? public_path('storage')
-    : storage_path('app/public');
+    : storage_path('app/public'));
 
 return [
 
