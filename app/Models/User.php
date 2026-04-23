@@ -4,10 +4,12 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Notifications\QueuedResetPassword;
+use App\Support\BrevoTransactionalMailer;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Log;
 
 class User extends Authenticatable
 {
@@ -52,6 +54,31 @@ class User extends Authenticatable
 
     public function sendPasswordResetNotification($token): void
     {
+        if (config('mail.brevo.api_key')) {
+            try {
+                app(BrevoTransactionalMailer::class)->sendPasswordResetLink(
+                    $this->email,
+                    $this->name ?? '',
+                    $this->passwordResetUrl($token)
+                );
+
+                return;
+            } catch (\Throwable $exception) {
+                Log::warning('Password reset Brevo notification failed', [
+                    'user_id' => $this->id,
+                    'email' => $this->email,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
         $this->notify(new QueuedResetPassword($token));
+    }
+
+    protected function passwordResetUrl(string $token): string
+    {
+        $frontendUrl = rtrim((string) env('FRONTEND_URL', config('app.url')), '/');
+
+        return $frontendUrl . '/reset-password?token=' . $token . '&email=' . urlencode($this->email);
     }
 }
