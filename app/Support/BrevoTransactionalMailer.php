@@ -54,11 +54,11 @@ class BrevoTransactionalMailer
         $html = new HtmlString(<<<HTML
             <div style="margin:0;padding:28px 0;background:#fff3ed;font-family:Georgia,'Times New Roman',serif;color:#1f2937;">
                 <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #f2c9ba;border-radius:22px;overflow:hidden;">
-                    <div style="padding:28px 32px;background:linear-gradient(135deg,#fff8f4 0%,#ffe1d4 100%);border-bottom:1px solid #f2c9ba;">
+                    <div style="padding:28px 32px;background:linear-gradient(135deg,#fff3ec 0%,#ffd9ca 100%);border-bottom:1px solid #f2c9ba;">
                         <p style="margin:0 0 8px;font-family:Arial,sans-serif;font-size:12px;letter-spacing:1.8px;text-transform:uppercase;color:#e65b4f;">
                             Hamza Lhamza
                         </p>
-                        <h1 style="margin:0;font-size:30px;line-height:1.2;color:#111827;">
+                        <h1 style="margin:0;font-size:30px;line-height:1.2;color:#2b1b18 !important;-webkit-text-fill-color:#2b1b18;">
                             Reinitialisation de votre mot de passe
                         </h1>
                     </div>
